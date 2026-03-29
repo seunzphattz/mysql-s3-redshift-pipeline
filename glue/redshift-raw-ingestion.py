@@ -17,7 +17,7 @@ table_name = args["table_name"]
 # Define constants
 bucket_name = "s3://aws-de-projects-bucket"
 redshift_iam_arn = "arn:aws:iam::901176923127:role/service-role/AmazonRedshift-CommandsAccessRole-20260114T233249"
-secret_name = "dwh-credentials2"
+secret_name = "dwh-credentials3"
 region_name = "us-east-1"
 
 def get_redshift_credentials(secret_name, region_name):

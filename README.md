@@ -1,25 +1,31 @@
 # End-to-End Data Pipeline: MySQL → S3 → Redshift (AWS)
 
-## Overview
+## Tech Highlights
+
+AWS Glue • Amazon S3 • Amazon Redshift • DynamoDB • Step Functions • EventBridge • Secrets Manager • Python • SQL • ELT Pipeline • Incremental Loading • Data Warehousing
+
+---
 
 ## Overview
 
-This project demonstrates a production-style ELT data pipeline that extracts operational data from MySQL (Amazon Aurora), stages it in Amazon S3, and transforms it into analytics-ready datasets in Amazon Redshift.
-The solution addresses common challenges such as overloading operational databases, slow query performance, and delayed dashboards by separating transactional workloads from analytical processing.
-
-By decoupling operational systems from analytics, the pipeline ensures improved performance, scalability, and timely insights, while supporting incremental data loads and high-volume processing.
+This project implements a production-grade ELT data platform that ingests operational data from Amazon Aurora (MySQL), stages it in Amazon S3 as a scalable data lake, and transforms it into analytics-ready datasets within Amazon Redshift. 
+The architecture is designed to decouple OLTP and OLAP workloads, reducing pressure on transactional systems while enabling high-performance analytical processing. It leverages S3 as the central storage layer and Redshift as the compute engine, following a separation-of-concerns approach for scalability and cost efficiency. 
+Incremental data loading is implemented using a stateful checkpointing mechanism (DynamoDB), ensuring idempotent and efficient data ingestion. Orchestration is handled via Step Functions, enabling controlled, modular, and fault-tolerant execution of pipeline stages. The system is built to handle growing data volumes, optimize batch processing using distributed compute (Glue), and provide a reliable foundation for downstream analytics, reporting, and data-driven decision-making.
 
 ---
 
 ## Problem Statement
 
-Overloaded operational DB
-Slow queries
-Poor dashboards
-Need separation of workloads
+* Overloaded operational databases due to analytical queries
+* Slow SQL performance on transactional systems
+* Poor dashboard performance and delayed insights
+* Lack of separation between OLTP and OLAP workloads
+
+---
 
 ## Architecture
 
+![Architecture Diagram](docs/architecture.png)
 ```
 MySQL (Aurora RDS)
         │
@@ -33,7 +39,7 @@ Amazon S3 (Raw Layer)
 AWS Glue (Load)
         │
         ▼
-Amazon Redshift (Raw → Staging → Analytics)
+Amazon Redshift (Raw → Staging → Processed)
         │
         ▼
 BI / Analytics / Reporting
@@ -43,80 +49,78 @@ BI / Analytics / Reporting
 
 ## AWS Services Used
 
- Service and  Role 
-
-| **Amazon Aurora MySQL (RDS)** | Source system storing operational data (e.g. apartments, user activity, events) |
-| **Amazon S3** | Data lake storage for raw data ingestion (landing zone) |
-| **AWS Glue** | Managed ETL service for extracting and loading data between sources |
-| **Amazon Redshift** | Data warehouse for staging transformations, analytical queries, and reporting |
-| **AWS Secrets Manager** | Secure storage of database credentials (MySQL & Redshift) |
-| **AWS Step Functions** | Orchestration of pipeline stages (extract → load → transform) |
-| **Amazon EventBridge** | Scheduling pipeline execution |
-| **Amazon DynamoDB** | Maintains state for incremental loading (e.g. last extracted timestamp) |
-| **AWS IAM** | Role-based access control for secure service interaction |
+| Service                   | Role                                             |
+| ------------------------- | ------------------------------------------------ |
+| Amazon Aurora MySQL (RDS) | Source system storing operational data           |
+| Amazon S3                 | Raw data lake storage (landing zone)             |
+| AWS Glue                  | ETL processing (extraction and loading)          |
+| Amazon Redshift           | Data warehouse for transformations and analytics |
+| AWS Secrets Manager       | Secure storage of database credentials           |
+| AWS Step Functions        | Orchestration of pipeline workflow               |
+| Amazon EventBridge        | Scheduling pipeline execution                    |
+| Amazon DynamoDB           | Tracks incremental load state                    |
+| AWS IAM                   | Secure access control across services            |
 
 ---
 
-##  Pipeline Flow
+## Pipeline Flow
 
-### 1.  (MySQL → S3)
-- Data is extracted from Aurora MySQL using AWS Glue
-- Incremental logic is applied using a timestamp column
-- Extracted data is stored in S3 as raw files
+### 1. Extraction (MySQL → S3)
+
+* Data is extracted from Aurora MySQL using AWS Glue
+* Incremental logic is applied using timestamp columns
+* Data is written to Amazon S3 as raw files
 
 ### 2. Raw Layer (S3)
-- Stores unprocessed source data
-- Acts as a single source of truth
-- Enables reprocessing if needed
+
+* Stores unprocessed source data
+* Acts as a single source of truth
+* Supports reprocessing and replay
 
 ### 3. Load (S3 → Redshift)
-- Data is loaded into Redshift using the `COPY` command
-- Stored in raw schema tables
+
+* Data is loaded into Redshift using the `COPY` command
+* Stored in `raw_zone` schema
 
 ### 4. Transformation (Inside Redshift)
 
-Data is processed through three layers:
+Data flows through structured layers:
 
 ```
-Raw → Staging → Analytics
+Raw → Staging → Processed
 ```
 
-Key transformations include:
-- Deduplication using window functions
-- Incremental upserts using `MERGE`
-- Data type standardisation
-- Aggregations for reporting
+Transformations include:
 
-### 5. Serving Layer (Analytics)
-Final tables are optimised for dashboards, reporting, and business insights.
+* Deduplication using window functions
+* Incremental upserts using `MERGE`
+* Data standardisation and cleaning
+* Aggregations for analytics
 
----
+### 5. Serving Layer
 
-## Key Features
-
-| Feature | Description |
-|---|---|
-| **Incremental Data Processing** | Uses DynamoDB to track last extracted values 
-| **Scalable ELT Architecture** | Transformation happens inside Redshift |
-| **Batch Processing via Glue** | Efficient handling of large datasets |
-| **Secure Credential Management** | Secrets stored in AWS Secrets Manager |
-| **Orchestrated Workflow** | Step Functions manage execution flow |
-| **Decoupled Storage & Compute** | S3 for storage, Redshift for compute |
+* Processed data is optimised for dashboards and reporting
+* Supports fast analytical queries
 
 ---
 
-##  Example Use Cases
+## Incremental Loading Strategy
 
-- User activity tracking
-- Operational performance analysis
-- Cost and usage reporting
-- Event-based analytics
+* DynamoDB stores the last successfully processed timestamp
+* Extraction queries filter using:
+
+  ```
+  WHERE updated_at > last_extracted_value
+  ```
+* After successful processing, the timestamp is updated
+* Ensures efficient, idempotent data loads
 
 ---
 
-##  Data Model (Redshift)
+## Data Model (Redshift)
 
 ### Raw Layer
+
 ```
 raw_zone.apartments
 raw_zone.apartment_attributes
@@ -124,37 +128,96 @@ raw_zone.apartment_viewings
 ```
 
 ### Staging Layer
-Deduplicated and cleaned datasets derived from the raw layer.
 
-### Analytics Layer
-Aggregated and business-ready tables optimised for reporting.
+* Cleaned and deduplicated intermediate datasets
+
+### Processed Layer
+
+* **dim_apartments** → apartment metadata
+* **dim_users** → user reference data
+* **fact_apartment_viewings** → user interaction events
+
+---
+
+## Project Structure
+
+```
+glue/
+    mysql-extraction.py
+    redshift-raw-ingestion.py
+    redshift-processed-layer.py
+
+step_functions/
+    pipeline.json
+
+mysql/
+    ddl.sql
+    transformations.sql
+    mysql-queries.sql
+```
 
 ---
 
 ## Technologies Used
 
-- **Python** — Glue scripts and ETL logic
-- **SQL** — Redshift transformations, `MERGE`, aggregations
-- **AWS SDK** — boto3
-- **Glue python shell** — via AWS Glue
+* Python (Glue scripts, orchestration logic)
+* SQL (Redshift transformations, MERGE, analytics)
+* boto3 (AWS SDK integration)
+* AWS Glue Python Shell
 
 ---
 
 ## Best Practices Applied
 
-- Batch loading using S3 + `COPY` (avoids row-by-row inserts)
-- Use of staging tables for safe transformation
-- Window functions for deduplication
-- Separation of storage and compute layers
-- Modular pipeline design for scalability
+* Batch loading using S3 + `COPY` (avoids row-by-row inserts)
+* Separation of storage and compute (S3 + Redshift)
+* Use of staging tables for safe transformations
+* Incremental loading for efficiency
+* Modular pipeline design for scalability
+* Secure credential handling via Secrets Manager
 
 ---
 
-##  How to Run
+## Monitoring & Observability
 
-1. Configure AWS credentials and IAM roles give glue permission to s3, cloudwatch and dynamo
-2. Store database credentials in AWS Secrets Manager
-3. Deploy Glue jobs for extraction and loading
-4. Configure Step Functions workflow
-5. Schedule pipeline using EventBridge
-6. Monitor execution via CloudWatch
+* AWS CloudWatch for Glue job logs
+* Step Functions execution tracking
+* Error handling and retry mechanisms
+* Logging implemented across pipeline stages
+
+---
+
+## Example Use Cases
+
+* User activity tracking
+* Operational performance analytics
+* Cost and usage reporting
+* Event-driven analytics
+
+---
+
+## How to Run
+
+1. Configure AWS credentials and IAM roles
+2. Grant Glue permissions to S3, CloudWatch, and DynamoDB
+3. Store database credentials in AWS Secrets Manager
+4. Deploy Glue jobs (extraction and ingestion)
+5. Configure Step Functions workflow
+6. Schedule execution using EventBridge
+7. Monitor pipeline via CloudWatch and Step Functions
+
+---
+
+## Future Improvements
+
+* Implement Slowly Changing Dimensions (SCD Type 2)
+* Add data quality validation layer
+* Introduce partitioning strategy in S3
+* Integrate BI dashboards (e.g., QuickSight)
+* Add CI/CD pipeline for deployment
+
+---
+
+## One-line Summary
+
+A scalable, production-style AWS data pipeline that ingests data from MySQL, stages it in S3, and transforms it in Redshift using incremental ELT principles.

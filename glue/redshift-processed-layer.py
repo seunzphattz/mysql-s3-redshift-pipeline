@@ -191,7 +191,7 @@ def merge_fact_apartment_viewings(cursor, last_processed_value):
 
 def main():
 
-    secret_name = "dwh-credentials"
+    secret_name = "dwh-credentials4"
     region_name = "us-east-1"
     credentials = get_redshift_credentials(secret_name, region_name)
 

@@ -28,7 +28,7 @@ def get_rds_credentials(secret_name, region_name):
     credentials = json.loads(secret)
     return credentials
 
-credentials = get_rds_credentials("rental-dbs", "us-east-1")
+credentials = get_rds_credentials("rental-db1", "us-east-1")
 
 # DB Credentials
 user_name = credentials['username']
